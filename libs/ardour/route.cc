@@ -97,6 +97,7 @@
 #include "ardour/session.h"
 #include "ardour/solo_control.h"
 #include "ardour/solo_isolate_control.h"
+#include "ardour/summing_processor.h"
 #include "ardour/surround_return.h"
 #include "ardour/surround_send.h"
 #include "ardour/triggerbox.h"
@@ -254,6 +255,14 @@ Route::init ()
 	else if (!dynamic_cast<Track*>(this) && ! (is_monitor() || is_auditioner())) {
 		/* regular bus */
 		_trim->activate();
+	}
+
+	/* analog summing emulation, applied to the summed input of busses */
+	if (!dynamic_cast<Track*>(this) && !is_monitor () && !is_auditioner () && !is_surround_master ()) {
+		_summing.reset (new SummingProcessor (_session));
+		_summing->set_owner (this);
+		_summing->set_model (_session.config.get_summing_model ());
+		_summing->activate ();
 	}
 
 	/* create standard processors: meter, main outs, monitor out;
@@ -1487,7 +1496,7 @@ Route::clear_processors (Placement p)
 bool
 Route::is_internal_processor (std::shared_ptr<Processor> p) const
 {
-	if (p == _amp || p == _meter || p == _main_outs || p == _delayline || p == _trim || p == _polarity || (_volume && p == _volume) || (_triggerbox && p == _triggerbox) || (_surround_return && p == _surround_return) || (_surround_send && p == _surround_send)) {
+	if (p == _amp || p == _meter || p == _main_outs || p == _delayline || p == _trim || p == _polarity || (_summing && p == _summing) || (_volume && p == _volume) || (_triggerbox && p == _triggerbox) || (_surround_return && p == _surround_return) || (_surround_send && p == _surround_send)) {
 		return true;
 	}
 	return false;
@@ -3523,7 +3532,7 @@ Route::set_processor_state (const XMLNode& node, int version)
 		} else if (prop->value() == "polarity") {
 			_polarity->set_state (**niter, version);
 			new_order.push_back (_polarity);
-		} else if (prop->value() == "delay") {
+		} else if (prop->value() == "delay" || prop->value() == "summing") {
 			// skip -- internal
 		} else if (prop->value() == "main-outs") {
 			_main_outs->set_state (**niter, version);
@@ -3597,6 +3606,9 @@ Route::set_processor_state (const XMLNode& node, int version)
 		}
 		if (_delayline) {
 			must_configure |= find (_processors.begin(), _processors.end(), _delayline) == _processors.end ();
+		}
+		if (_summing) {
+			must_configure |= find (_processors.begin(), _processors.end(), _summing) == _processors.end ();
 		}
 		if (_intreturn) {
 			must_configure |= find (_processors.begin(), _processors.end(), _intreturn) == _processors.end ();
@@ -5840,6 +5852,15 @@ Route::setup_invisible_processors ()
 		assert (!_trim->display_to_user ());
 		new_processors.push_front (_trim);
 		trim = new_processors.begin();
+	}
+
+	/* SUMMING (busses), operates on the summed input before trim.
+	 * The internal return (aux sends) is added in front of it below.
+	 */
+
+	if (_summing) {
+		assert (!_summing->display_to_user ());
+		new_processors.push_front (_summing);
 	}
 
 #ifdef HAVE_BEATBOX

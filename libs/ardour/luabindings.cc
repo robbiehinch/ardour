@@ -113,6 +113,8 @@
 #include "ardour/solo_isolate_control.h"
 #include "ardour/solo_safe_control.h"
 #include "ardour/stripable.h"
+#include "ardour/summing_model.h"
+#include "ardour/summing_processor.h"
 #include "ardour/surround_return.h"
 #include "ardour/surround_send.h"
 #include "ardour/surround_pannable.h"
@@ -1544,6 +1546,7 @@ LuaBindings::common (lua_State* L)
 		.addFunction ("soloed", &Route::soloed)
 		.addFunction ("amp", &Route::amp)
 		.addFunction ("trim", &Route::trim)
+		.addFunction ("summing", &Route::summing)
 		.addFunction ("peak_meter", (std::shared_ptr<PeakMeter> (Route::*)())&Route::peak_meter)
 		.addFunction ("set_meter_point", &Route::set_meter_point)
 		.addFunction ("signal_latency", &Route::signal_latency)
@@ -1940,6 +1943,7 @@ LuaBindings::common (lua_State* L)
 		.addCast<InternalSend> ("to_internalsend")
 		.addCast<PolarityProcessor> ("to_polarityprocessor")
 		.addCast<DelayLine> ("to_delayline")
+		.addCast<SummingProcessor> ("to_summingprocessor")
 #if 0 // those objects are not yet bound
 		.addCast<CapturingProcessor> ("to_capturingprocessor")
 #endif
@@ -2273,6 +2277,15 @@ LuaBindings::common (lua_State* L)
 
 		.deriveWSPtrClass <DelayLine, Processor> ("DelayLine")
 		.addFunction ("delay", &DelayLine::delay)
+		.endClass ()
+
+		.deriveWSPtrClass <SummingProcessor, Processor> ("SummingProcessor")
+		.addFunction ("set_model", &SummingProcessor::set_model)
+		.addFunction ("model_name", &SummingProcessor::model_name)
+		.endClass ()
+
+		.beginClass <SummingModel> ("SummingModel")
+		.addStaticFunction ("available_models", &SummingModel::available_models)
 		.endClass ()
 
 		.deriveWSPtrClass <PlugInsertBase::PluginControl, AutomationControl> ("PluginControl")

@@ -140,6 +140,7 @@
 #include "ardour/sndfilesource.h"
 #include "ardour/source_factory.h"
 #include "ardour/speakers.h"
+#include "ardour/summing_processor.h"
 #include "ardour/template_utils.h"
 #include "ardour/tempo.h"
 #include "ardour/ticker.h"
@@ -5266,6 +5267,13 @@ Session::config_changed (std::string p, bool ours)
 		Temporal::TimeDomain td = config.get_default_time_domain ();
 		set_time_domain (td);
 		Config->set_preferred_time_domain(td);  /* sync the global default time domain to this newly chosen one */
+	} else if (p == "summing-model") {
+		std::shared_ptr<RouteList const> rl = routes.reader ();
+		for (auto const& r : *rl) {
+			if (r->summing ()) {
+				r->summing ()->set_model (config.get_summing_model ());
+			}
+		}
 	}
 
 	set_dirty ();

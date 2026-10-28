@@ -23,6 +23,7 @@
 #include "pbd/configuration.h"
 
 #include "ardour/session.h"
+#include "ardour/summing_model.h"
 #include "ardour/transport_master_manager.h"
 
 #include "actions.h"
@@ -288,6 +289,27 @@ SessionOptionEditor::SessionOptionEditor (Session* s)
 
 	add_option (_("Monitoring"), new OptionEditorBlank ());
 
+	/* Mixer */
+
+	add_option (_("Mixer"), new OptionEditorHeading (_("Bus Summing")));
+
+	ComboStringOption* sm = new ComboStringOption (
+			"summing-model",
+			_("Analog summing model"),
+			sigc::mem_fun (*this, &SessionOptionEditor::get_summing_model),
+			sigc::mem_fun (*this, &SessionOptionEditor::set_summing_model)
+			);
+	std::vector<std::string> models;
+	models.push_back (_("None (linear)"));
+	for (auto const& m : SummingModel::available_models ()) {
+		models.push_back (m);
+	}
+	sm->set_popdown_strings (models);
+	Gtkmm2ext::UI::instance()->set_tip (sm->tip_widget(), _("Emulate the character of an analog summing amplifier on the summed input of every bus and the master bus."));
+	add_option (_("Mixer"), sm);
+
+	add_option (_("Mixer"), new OptionEditorBlank ());
+
 	/* Meterbridge */
 	add_option (_("Meterbridge"), new OptionEditorHeading (_("Display Options")));
 
@@ -540,6 +562,22 @@ SessionOptionEditor::parameter_changed (std::string const & p)
 			parameter_changed ("native-file-data-format");
 		}
 	}
+}
+
+std::string
+SessionOptionEditor::get_summing_model () const
+{
+	std::string const& m (_session_config->get_summing_model ());
+	return m.empty () ? _("None (linear)") : m;
+}
+
+bool
+SessionOptionEditor::set_summing_model (std::string m)
+{
+	if (m == _("None (linear)")) {
+		m = "";
+	}
+	return _session_config->set_summing_model (m);
 }
 
 void

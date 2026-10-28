@@ -47,4 +47,7 @@ private:
 
 	void save_defaults ();
 	void scale_change ();
+
+	std::string get_summing_model () const;
+	bool set_summing_model (std::string);
 };

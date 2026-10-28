@@ -12,6 +12,7 @@ CURRENT_SESSION_FILE_VERSION = 7004
 I18N_PACKAGE = 'ardour'
 
 libardour_sources = [
+        'airwindows_console.cc',
         'amp.cc',
         'analyser.cc',
         'analysis_graph.cc',
@@ -257,6 +258,7 @@ libardour_sources = [
         'strip_silence.cc',
         'summing_model.cc',
         'summing_processor.cc',
+        'summing_stage.cc',
         'strum.cc',
         'surround_pannable.cc',
         'surround_return.cc',
@@ -651,6 +653,7 @@ def build(bld):
             create_ardour_test_program(bld, obj.includes, 'unit-test-sha1', 'test_sha1', ['test/sha1_test.cc'])
             create_ardour_test_program(bld, obj.includes, 'unit-test-session', 'test_session', ['test/session_test.cc'])
             create_ardour_test_program(bld, obj.includes, 'unit-test-summing_model', 'test_summing_model', ['test/summing_model_test.cc'])
+            create_ardour_test_program(bld, obj.includes, 'unit-test-summing_stage', 'test_summing_stage', ['test/summing_stage_test.cc'])
             create_ardour_test_program(bld, obj.includes, 'unit-test-dsp_load_calculator', 'test_dsp_load_calculator', ['test/dsp_load_calculator_test.cc'])
 
         test_sources  = [
@@ -674,6 +677,7 @@ def build(bld):
             'test/sha1_test.cc',
             'test/session_test.cc',
             'test/summing_model_test.cc',
+            'test/summing_stage_test.cc',
         ]
 
 # Tests that don't work

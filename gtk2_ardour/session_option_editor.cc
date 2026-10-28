@@ -22,8 +22,12 @@
 
 #include "pbd/configuration.h"
 
+#include "ardour/lua_api.h"
+#include "ardour/plugin_manager.h"
 #include "ardour/session.h"
 #include "ardour/summing_model.h"
+#include "ardour/summing_processor.h"
+#include "ardour/summing_stage.h"
 #include "ardour/transport_master_manager.h"
 
 #include "actions.h"
@@ -42,6 +46,12 @@ SessionOptionEditor::SessionOptionEditor (Session* s)
 	, _session_config (&(s->config))
 	, scale_widget (nullptr)
 {
+	for (int r = 0; r < 2; ++r) {
+		_summing_preset[r]       = 0;
+		_summing_trim_target[r]  = 0;
+		_summing_oversampling[r] = 0;
+	}
+
 	set_session (s);
 
 	set_name ("SessionProperties");
@@ -291,23 +301,8 @@ SessionOptionEditor::SessionOptionEditor (Session* s)
 
 	/* Mixer */
 
-	add_option (_("Mixer"), new OptionEditorHeading (_("Bus Summing")));
-
-	ComboStringOption* sm = new ComboStringOption (
-			"summing-model",
-			_("Analog summing model"),
-			sigc::mem_fun (*this, &SessionOptionEditor::get_summing_model),
-			sigc::mem_fun (*this, &SessionOptionEditor::set_summing_model)
-			);
-	std::vector<std::string> models;
-	models.push_back (_("None (linear)"));
-	for (auto const& m : SummingModel::available_models ()) {
-		models.push_back (m);
-	}
-	sm->set_popdown_strings (models);
-	Gtkmm2ext::UI::instance()->set_tip (sm->tip_widget(), _("Emulate the character of an analog summing amplifier on the summed input of every bus and the master bus."));
-	add_option (_("Mixer"), sm);
-
+	add_summing_options (ARDOUR::SummingChannel);
+	add_summing_options (ARDOUR::SummingBus);
 	add_option (_("Mixer"), new OptionEditorBlank ());
 
 	/* Meterbridge */
@@ -540,6 +535,27 @@ SessionOptionEditor::parameter_changed (std::string const & p)
 		parameter_changed("timecode-generator-offset");
 		parameter_changed("slave-timecode-offset");
 	}
+	else if (p == "summing-channel-model" || p == "summing-bus-model") {
+		bool const        ch = p == "summing-channel-model";
+		int const         r  = ch ? 0 : 1;
+		std::string const m (ch ? _session_config->get_summing_channel_model () : _session_config->get_summing_bus_model ());
+		PluginType        type;
+		std::string       unique_id;
+		bool const        plugin = SummingProcessor::parse_plugin_model_id (m, type, unique_id);
+		if (_summing_preset[r]) {
+			_summing_preset[r]->set_sensitive (plugin);
+		}
+		if (_summing_oversampling[r]) {
+			_summing_oversampling[r]->set_sensitive (!plugin && !m.empty ());
+		}
+	}
+	else if (p == "summing-channel-auto-trim" || p == "summing-bus-auto-trim") {
+		bool const ch = p == "summing-channel-auto-trim";
+		int const  r  = ch ? 0 : 1;
+		if (_summing_trim_target[r]) {
+			_summing_trim_target[r]->tip_widget ().set_sensitive (ch ? _session_config->get_summing_channel_auto_trim () : _session_config->get_summing_bus_auto_trim ());
+		}
+	}
 	else if (p == "track-name-take") {
 		_take_name->set_sensitive(_session_config->get_track_name_take());
 	}
@@ -564,20 +580,188 @@ SessionOptionEditor::parameter_changed (std::string const & p)
 	}
 }
 
-std::string
-SessionOptionEditor::get_summing_model () const
+/* Mixer page: analog summing */
+
+static std::string
+linear_label ()
 {
-	std::string const& m (_session_config->get_summing_model ());
-	return m.empty () ? _("None (linear)") : m;
+	return _("None (linear)");
+}
+
+static std::string
+plugin_label (PluginInfoPtr const& pi)
+{
+	return string_compose (_("Plugin: %1 (%2)"), pi->name, PluginManager::plugin_type_name (pi->type));
+}
+
+/** plugins usable for summing: favorite audio effects */
+static PluginInfoList
+summing_plugins ()
+{
+	PluginManager& pm (PluginManager::instance ());
+	PluginInfoList all;
+	all.insert (all.end (), pm.lv2_plugin_info ().begin (), pm.lv2_plugin_info ().end ());
+	all.insert (all.end (), pm.ladspa_plugin_info ().begin (), pm.ladspa_plugin_info ().end ());
+	all.insert (all.end (), pm.lua_plugin_info ().begin (), pm.lua_plugin_info ().end ());
+#ifdef WINDOWS_VST_SUPPORT
+	all.insert (all.end (), pm.windows_vst_plugin_info ().begin (), pm.windows_vst_plugin_info ().end ());
+#endif
+#ifdef LXVST_SUPPORT
+	all.insert (all.end (), pm.lxvst_plugin_info ().begin (), pm.lxvst_plugin_info ().end ());
+#endif
+#ifdef MACVST_SUPPORT
+	all.insert (all.end (), pm.mac_vst_plugin_info ().begin (), pm.mac_vst_plugin_info ().end ());
+#endif
+#ifdef VST3_SUPPORT
+	all.insert (all.end (), pm.vst3_plugin_info ().begin (), pm.vst3_plugin_info ().end ());
+#endif
+#ifdef AUDIOUNIT_SUPPORT
+	all.insert (all.end (), pm.au_plugin_info ().begin (), pm.au_plugin_info ().end ());
+#endif
+
+	PluginInfoList rv;
+	for (auto const& pi : all) {
+		if (pm.get_status (pi) == PluginManager::Favorite && !pi->is_instrument ()
+		    && pi->n_inputs.n_audio () > 0 && pi->n_outputs.n_audio () > 0) {
+			rv.push_back (pi);
+		}
+	}
+	return rv;
+}
+
+void
+SessionOptionEditor::add_summing_options (SummingRole role)
+{
+	typedef SessionConfiguration SC;
+	bool const        ch   = role == SummingChannel;
+	int const         r    = ch ? 0 : 1;
+	std::string const page = _("Mixer");
+	std::string const pfx  = ch ? "summing-channel-" : "summing-bus-";
+
+	if (ch) {
+		add_option (page, new OptionEditorHeading (_("Channel Stage")));
+	} else {
+		add_option (page, new OptionEditorHeading (_("Bus Summing")));
+	}
+
+	/* model choices: linear, built-in models, favorite plugins */
+	std::vector<std::string> labels;
+	labels.push_back (linear_label ());
+	_summing_label_to_model[r][linear_label ()] = "";
+	_summing_model_to_label[r][""]              = linear_label ();
+
+	for (auto const& m : SummingModel::available_models (role)) {
+		labels.push_back (m);
+		_summing_label_to_model[r][m] = m;
+		_summing_model_to_label[r][m] = m;
+	}
+
+	PluginInfoList plugins (summing_plugins ());
+	/* keep the configured plugin listed, even if it is no longer a favorite */
+	PluginType  type;
+	std::string unique_id;
+	std::string const current (ch ? _session_config->get_summing_channel_model () : _session_config->get_summing_bus_model ());
+	if (SummingProcessor::parse_plugin_model_id (current, type, unique_id)) {
+		PluginInfoPtr pi = LuaAPI::new_plugin_info (unique_id, type);
+		if (pi && std::find (plugins.begin (), plugins.end (), pi) == plugins.end ()) {
+			plugins.push_back (pi);
+		}
+	}
+	for (auto const& pi : plugins) {
+		std::string const label = plugin_label (pi);
+		std::string const model = SummingProcessor::plugin_model_id (pi->type, pi->unique_id);
+		labels.push_back (label);
+		_summing_label_to_model[r][label] = model;
+		_summing_model_to_label[r][model] = label;
+	}
+
+	ComboStringOption* mo = new ComboStringOption (
+			pfx + "model",
+			_("Model"),
+			sigc::bind (sigc::mem_fun (*this, &SessionOptionEditor::get_summing_model), role),
+			sigc::bind (sigc::mem_fun (*this, &SessionOptionEditor::set_summing_model), role)
+			);
+	mo->set_popdown_strings (labels);
+	if (ch) {
+		Gtkmm2ext::UI::instance()->set_tip (mo->tip_widget(), _("Processing at the end of every track and sub-bus, before the fader: the console channel's line amplifier. Use with the matching bus model for encode/decode pairs such as Airwindows Console. Plugins marked as favorite in the Plugin Selector are listed here as well."));
+	} else {
+		Gtkmm2ext::UI::instance()->set_tip (mo->tip_widget(), _("Processing on the summed input of every bus and the master bus: the console's summing amplifier. Plugins marked as favorite in the Plugin Selector are listed here as well."));
+	}
+	add_option (page, mo);
+
+	EntryOption* po = new EntryOption (
+			pfx + "preset",
+			_("Plugin preset"),
+			sigc::mem_fun (*_session_config, ch ? &SC::get_summing_channel_preset : &SC::get_summing_bus_preset),
+			sigc::mem_fun (*_session_config, ch ? &SC::set_summing_channel_preset : &SC::set_summing_bus_preset)
+			);
+	Gtkmm2ext::UI::instance()->set_tip (po->tip_widget(), _("Name of a preset of the selected plugin to load. Save a preset from the plugin's window on any track to set the plugin up."));
+	add_option (page, po);
+	_summing_preset[r] = po;
+
+	add_option (page, new SpinOption<float> (
+			pfx + "drive",
+			_("Drive"),
+			sigc::mem_fun (*_session_config, ch ? &SC::get_summing_channel_drive : &SC::get_summing_bus_drive),
+			sigc::mem_fun (*_session_config, ch ? &SC::set_summing_channel_drive : &SC::set_summing_bus_drive),
+			-12, 36, .5, 3, _("dB"), 1, 1));
+
+	BoolOption* at = new BoolOption (
+			pfx + "auto-trim",
+			_("Auto-trim the input to a target peak level"),
+			sigc::mem_fun (*_session_config, ch ? &SC::get_summing_channel_auto_trim : &SC::get_summing_bus_auto_trim),
+			sigc::mem_fun (*_session_config, ch ? &SC::set_summing_channel_auto_trim : &SC::set_summing_bus_auto_trim)
+			);
+	Gtkmm2ext::UI::instance()->set_tip (at->tip_widget(), _("Follow the input's peak level and normalize it to the target level before the model, then restore the original level after it. Drive is applied on top."));
+	add_option (page, at);
+
+	SpinOption<float>* tt = new SpinOption<float> (
+			pfx + "trim-target",
+			_("Auto-trim target peak"),
+			sigc::mem_fun (*_session_config, ch ? &SC::get_summing_channel_trim_target : &SC::get_summing_bus_trim_target),
+			sigc::mem_fun (*_session_config, ch ? &SC::set_summing_channel_trim_target : &SC::set_summing_bus_trim_target),
+			-36, 6, .5, 3, _("dBFS"), 1, 1);
+	add_option (page, tt);
+	_summing_trim_target[r] = tt;
+
+	ComboOption<uint32_t>* os = new ComboOption<uint32_t> (
+			pfx + "oversampling",
+			_("Oversampling"),
+			sigc::mem_fun (*_session_config, ch ? &SC::get_summing_channel_oversampling : &SC::get_summing_bus_oversampling),
+			sigc::mem_fun (*_session_config, ch ? &SC::set_summing_channel_oversampling : &SC::set_summing_bus_oversampling)
+			);
+	os->add (1, _("None"));
+	os->add (2, _("2x"));
+	os->add (4, _("4x"));
+	os->add (8, _("8x"));
+	os->add (16, _("16x"));
+	Gtkmm2ext::UI::instance()->set_tip (os->tip_widget(), string_compose (_("Run built-in models at a multiple of the session sample rate to reduce aliasing. Adds %1 samples of latency, which is compensated. Plugins are not oversampled."), Oversampler::taps_per_phase));
+	add_option (page, os);
+	_summing_oversampling[r] = os;
+
+	parameter_changed (pfx + "model");
+	parameter_changed (pfx + "auto-trim");
+}
+
+std::string
+SessionOptionEditor::get_summing_model (SummingRole role) const
+{
+	int const          r = role == SummingChannel ? 0 : 1;
+	std::string const& m (role == SummingChannel ? _session_config->get_summing_channel_model () : _session_config->get_summing_bus_model ());
+	auto const         i = _summing_model_to_label[r].find (m);
+	return i == _summing_model_to_label[r].end () ? m : i->second;
 }
 
 bool
-SessionOptionEditor::set_summing_model (std::string m)
+SessionOptionEditor::set_summing_model (std::string label, SummingRole role)
 {
-	if (m == _("None (linear)")) {
-		m = "";
+	int const   r = role == SummingChannel ? 0 : 1;
+	auto const  i = _summing_label_to_model[r].find (label);
+	std::string m = i == _summing_label_to_model[r].end () ? label : i->second;
+	if (role == SummingChannel) {
+		return _session_config->set_summing_channel_model (m);
 	}
-	return _session_config->set_summing_model (m);
+	return _session_config->set_summing_bus_model (m);
 }
 
 void

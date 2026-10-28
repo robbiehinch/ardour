@@ -26,6 +26,7 @@ namespace {
 struct ModelEntry {
 	std::string           name;
 	SummingModel::Factory factory;
+	int                   roles;
 };
 
 static std::mutex&
@@ -45,6 +46,8 @@ registry_lock ()
  *    offset introduced by the asymmetric saturation.
  *
  * Small-signal gain is unity, so at low levels the model is transparent.
+ * With 16dB of headroom it is subtle at normal mix levels; use the stage's
+ * drive or auto-trim to push it harder.
  */
 class AnalogConsoleSumming : public SummingModel
 {
@@ -130,7 +133,7 @@ static std::vector<ModelEntry>&
 registry ()
 {
 	static std::vector<ModelEntry> r {
-		{ "Analog Console", [] () -> SummingModel* { return new AnalogConsoleSumming; } },
+		{ "Analog Console", [] () -> SummingModel* { return new AnalogConsoleSumming; }, SummingAnyRole },
 	};
 	return r;
 }
@@ -138,9 +141,9 @@ registry ()
 } // anonymous namespace
 
 bool
-SummingModel::register_model (std::string const& name, Factory factory)
+SummingModel::register_model (std::string const& name, Factory factory, int roles)
 {
-	if (name.empty () || !factory) {
+	if (name.empty () || !factory || !(roles & SummingAnyRole)) {
 		return false;
 	}
 
@@ -150,7 +153,7 @@ SummingModel::register_model (std::string const& name, Factory factory)
 			return false;
 		}
 	}
-	registry ().push_back (ModelEntry { name, factory });
+	registry ().push_back (ModelEntry { name, factory, roles });
 	return true;
 }
 
@@ -167,12 +170,14 @@ SummingModel::create (std::string const& name)
 }
 
 std::vector<std::string>
-SummingModel::available_models ()
+SummingModel::available_models (int role)
 {
 	std::vector<std::string> rv;
 	std::lock_guard<std::mutex> lm (registry_lock ());
 	for (auto const& e : registry ()) {
-		rv.push_back (e.name);
+		if (e.roles & role) {
+			rv.push_back (e.name);
+		}
 	}
 	return rv;
 }

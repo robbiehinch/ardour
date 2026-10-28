@@ -231,8 +231,10 @@ public:
 	std::shared_ptr<Amp> amp() const  { return _amp; }
 	std::shared_ptr<Amp> trim() const { return _trim; }
 	std::shared_ptr<PolarityProcessor> polarity() const { return _polarity; }
-	/** analog summing emulation, busses only (may be null) */
-	std::shared_ptr<SummingProcessor> summing() const { return _summing; }
+	/** analog summing emulation on the summed input, busses only (may be null) */
+	std::shared_ptr<SummingProcessor> summing_bus_stage() const { return _summing_bus; }
+	/** analog channel emulation before the fader, tracks and sub-busses only (may be null) */
+	std::shared_ptr<SummingProcessor> summing_channel_stage() const { return _summing_channel; }
 	std::shared_ptr<PeakMeter>       peak_meter()       { return _meter; }
 	std::shared_ptr<const PeakMeter> peak_meter() const { return _meter; }
 	std::shared_ptr<PeakMeter> shared_peak_meter() const { return _meter; }
@@ -708,7 +710,8 @@ protected:
 	std::shared_ptr<Amp>               _volume;
 	std::shared_ptr<PeakMeter>         _meter;
 	std::shared_ptr<PolarityProcessor> _polarity;
-	std::shared_ptr<SummingProcessor>  _summing;
+	std::shared_ptr<SummingProcessor>  _summing_bus;
+	std::shared_ptr<SummingProcessor>  _summing_channel;
 	std::shared_ptr<TriggerBox>        _triggerbox;
 
 	bool _volume_applies_to_output;

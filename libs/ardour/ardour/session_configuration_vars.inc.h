@@ -31,7 +31,18 @@
 CONFIG_VARIABLE (bool, use_region_fades, "use-region-fades", true)
 CONFIG_VARIABLE (bool, use_transport_fades, "use-transport-fades", true)
 CONFIG_VARIABLE (bool, use_monitor_fades, "use-monitor-fades", true)
-CONFIG_VARIABLE (std::string, summing_model, "summing-model", "") /* empty: linear summing */
+CONFIG_VARIABLE (std::string, summing_bus_model, "summing-bus-model", "") /* model name, plugin id or empty for linear */
+CONFIG_VARIABLE (std::string, summing_bus_preset, "summing-bus-preset", "") /* plugin preset */
+CONFIG_VARIABLE (float, summing_bus_drive, "summing-bus-drive", 0.0f) /* dB */
+CONFIG_VARIABLE (bool, summing_bus_auto_trim, "summing-bus-auto-trim", false)
+CONFIG_VARIABLE (float, summing_bus_trim_target, "summing-bus-trim-target", -6.0f) /* dBFS peak */
+CONFIG_VARIABLE (uint32_t, summing_bus_oversampling, "summing-bus-oversampling", 1)
+CONFIG_VARIABLE (std::string, summing_channel_model, "summing-channel-model", "") /* model name, plugin id or empty for linear */
+CONFIG_VARIABLE (std::string, summing_channel_preset, "summing-channel-preset", "") /* plugin preset */
+CONFIG_VARIABLE (float, summing_channel_drive, "summing-channel-drive", 0.0f) /* dB */
+CONFIG_VARIABLE (bool, summing_channel_auto_trim, "summing-channel-auto-trim", false)
+CONFIG_VARIABLE (float, summing_channel_trim_target, "summing-channel-trim-target", -6.0f) /* dBFS peak */
+CONFIG_VARIABLE (uint32_t, summing_channel_oversampling, "summing-channel-oversampling", 1)
 CONFIG_VARIABLE (SampleFormat, native_file_data_format,  "native-file-data-format", ARDOUR::FormatFloat)
 CONFIG_VARIABLE (HeaderFormat, native_file_header_format,  "native-file-header-format", ARDOUR::RF64_WAV)
 CONFIG_VARIABLE (bool, auto_play, "auto-play", false)

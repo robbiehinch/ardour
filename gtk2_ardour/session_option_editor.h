@@ -20,6 +20,11 @@
 
 #pragma once
 
+#include <map>
+#include <string>
+
+#include "ardour/summing_model.h"
+
 #include "option_editor.h"
 
 namespace ARDOUR {
@@ -48,6 +53,14 @@ private:
 	void save_defaults ();
 	void scale_change ();
 
-	std::string get_summing_model () const;
-	bool set_summing_model (std::string);
+	void add_summing_options (ARDOUR::SummingRole);
+	std::string get_summing_model (ARDOUR::SummingRole) const;
+	bool set_summing_model (std::string, ARDOUR::SummingRole);
+
+	/* index 0: channel stage, 1: bus stage */
+	std::map<std::string, std::string> _summing_label_to_model[2];
+	std::map<std::string, std::string> _summing_model_to_label[2];
+	EntryOption*                       _summing_preset[2];
+	SpinOption<float>*                 _summing_trim_target[2];
+	ComboOption<uint32_t>*             _summing_oversampling[2];
 };

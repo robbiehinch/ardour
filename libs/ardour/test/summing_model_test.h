@@ -9,6 +9,9 @@ class SummingModelTest : public CppUnit::TestFixture
 	CPPUNIT_TEST (saturationTest);
 	CPPUNIT_TEST (dcBlockTest);
 	CPPUNIT_TEST (oddChannelTest);
+	CPPUNIT_TEST (rolesTest);
+	CPPUNIT_TEST (airwindowsRoundTripTest);
+	CPPUNIT_TEST (airwindowsSummingTest);
 	CPPUNIT_TEST_SUITE_END ();
 
 public:
@@ -20,4 +23,7 @@ public:
 	void saturationTest ();
 	void dcBlockTest ();
 	void oddChannelTest ();
+	void rolesTest ();
+	void airwindowsRoundTripTest ();
+	void airwindowsSummingTest ();
 };

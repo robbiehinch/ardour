@@ -25,19 +25,36 @@
 
 namespace ARDOUR {
 
+/** Where in the signal flow a summing model is used */
+enum SummingRole {
+	/** channel stage: end of a track's (or sub-bus') processing, before the
+	 * fader, i.e. a console channel's line amplifier driving the mix bus.
+	 */
+	SummingChannel = 0x1,
+	/** bus stage: the summed input of a bus or the master bus,
+	 * i.e. the console's summing amplifier.
+	 */
+	SummingBus     = 0x2,
+	SummingAnyRole = 0x3
+};
+
 /** Interface for analog summing emulation.
  *
- * A SummingModel processes the signal of a bus (and the master bus) right
- * after all of its inputs (port connections and aux-sends) have been summed,
- * and before the bus' trim, plugins and fader. This is the point where a
- * console's summing amplifier sits, and where Mixbus applies its built-in
- * summing character.
+ * A SummingModel processes audio at one of two places (see SummingRole):
+ * the channel stage of each track and sub-bus, and the bus stage, right
+ * after all inputs of a bus (port connections and aux-sends) have been
+ * summed. Using both mirrors an analog console, where each channel's line
+ * amp colours its own signal, and the summing amp colours the sum.
  *
- * Every bus owns its own model instance, so models may keep per-bus state
- * (filter memory, envelope followers etc).
+ * Every stage owns its own model instance, so models may keep per-stage
+ * state (filter memory, envelope followers etc).
+ *
+ * Level handling (drive, auto-trim) and oversampling are done around the
+ * model by ARDOUR::SummingStage, so models only implement the transfer
+ * function at the sample rate they are configured with.
  *
  * To add a custom model, implement this interface and register it once at
- * startup (e.g. from a static initializer in the same source file):
+ * startup, e.g. using a static object in the same source file:
  *
  * @code
  * class MySumming : public ARDOUR::SummingModel {
@@ -45,12 +62,15 @@ namespace ARDOUR {
  *   void run (float* const* bufs, uint32_t n_chan, pframes_t n_samples) { ... }
  * };
  *
- * static bool registered = ARDOUR::SummingModel::register_model (
- *     "My Console", [] () { return new MySumming; });
+ * static struct MyRegistrar {
+ *   MyRegistrar () {
+ *     ARDOUR::SummingModel::register_model ("My Console", [] () -> ARDOUR::SummingModel* { return new MySumming; });
+ *   }
+ * } my_registrar;
  * @endcode
  *
- * The model can then be selected per session in
- * Session > Properties > Mixer ("summing-model" session configuration).
+ * See airwindows_console.cc for complete examples. The model can then be
+ * selected per session in Session > Properties > Mixer.
  */
 class LIBARDOUR_API SummingModel
 {
@@ -62,14 +82,16 @@ public:
 	/** Prepare for processing.
 	 *
 	 * Called from a non-realtime thread before the first call to run(), and
-	 * whenever the bus' channel count changes. Allocate per-channel state here.
+	 * whenever the stage's channel count or oversampling factor changes.
+	 * Allocate per-channel state here.
 	 *
-	 * @param n_channels number of audio channels of the bus
-	 * @param sample_rate session sample rate
+	 * @param n_channels number of audio channels
+	 * @param sample_rate rate at which run() will be called, i.e. the
+	 *        session sample rate multiplied by the oversampling factor
 	 */
 	virtual void configure (uint32_t n_channels, samplecnt_t sample_rate) = 0;
 
-	/** Process the summed bus signal in-place.
+	/** Process audio in-place.
 	 *
 	 * Called from the realtime process thread: must not allocate memory,
 	 * take locks or otherwise block. Must not add latency.
@@ -81,15 +103,16 @@ public:
 	virtual void run (float* const* bufs, uint32_t n_channels, pframes_t n_samples) = 0;
 
 	/** Make a model available under the given (user-visible) name.
+	 * @param roles stages this model is meant for (a bitwise or of SummingRole)
 	 * @return false if a model of the same name is already registered
 	 */
-	static bool register_model (std::string const& name, Factory factory);
+	static bool register_model (std::string const& name, Factory factory, int roles = SummingAnyRole);
 
 	/** @return a new instance of the named model, or 0 if no such model exists */
 	static SummingModel* create (std::string const& name);
 
-	/** @return names of all registered models, in registration order */
-	static std::vector<std::string> available_models ();
+	/** @return names of all models registered for the given role, in registration order */
+	static std::vector<std::string> available_models (int role = SummingAnyRole);
 };
 
 } // namespace ARDOUR

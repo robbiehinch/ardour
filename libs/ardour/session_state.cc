@@ -5267,11 +5267,18 @@ Session::config_changed (std::string p, bool ours)
 		Temporal::TimeDomain td = config.get_default_time_domain ();
 		set_time_domain (td);
 		Config->set_preferred_time_domain(td);  /* sync the global default time domain to this newly chosen one */
-	} else if (p == "summing-model") {
+	} else if (p.compare (0, 12, "summing-bus-") == 0) {
 		std::shared_ptr<RouteList const> rl = routes.reader ();
 		for (auto const& r : *rl) {
-			if (r->summing ()) {
-				r->summing ()->set_model (config.get_summing_model ());
+			if (r->summing_bus_stage ()) {
+				r->summing_bus_stage ()->apply_session_config ();
+			}
+		}
+	} else if (p.compare (0, 16, "summing-channel-") == 0) {
+		std::shared_ptr<RouteList const> rl = routes.reader ();
+		for (auto const& r : *rl) {
+			if (r->summing_channel_stage ()) {
+				r->summing_channel_stage ()->apply_session_config ();
 			}
 		}
 	}

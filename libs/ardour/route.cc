@@ -257,12 +257,23 @@ Route::init ()
 		_trim->activate();
 	}
 
-	/* analog summing emulation, applied to the summed input of busses */
-	if (!dynamic_cast<Track*>(this) && !is_monitor () && !is_auditioner () && !is_surround_master ()) {
-		_summing.reset (new SummingProcessor (_session));
-		_summing->set_owner (this);
-		_summing->set_model (_session.config.get_summing_model ());
-		_summing->activate ();
+	/* analog summing emulation: a bus stage on the summed input of busses,
+	 * and a channel stage before the fader of everything that feeds a bus.
+	 */
+	if (!is_monitor () && !is_auditioner () && !is_surround_master ()) {
+		bool const is_track = dynamic_cast<Track*>(this) != 0;
+		if (!is_track) {
+			_summing_bus.reset (new SummingProcessor (_session, SummingBus));
+			_summing_bus->set_owner (this);
+			_summing_bus->apply_session_config ();
+			_summing_bus->activate ();
+		}
+		if (is_track || !(is_master () || is_foldbackbus ())) {
+			_summing_channel.reset (new SummingProcessor (_session, SummingChannel));
+			_summing_channel->set_owner (this);
+			_summing_channel->apply_session_config ();
+			_summing_channel->activate ();
+		}
 	}
 
 	/* create standard processors: meter, main outs, monitor out;
@@ -1496,7 +1507,7 @@ Route::clear_processors (Placement p)
 bool
 Route::is_internal_processor (std::shared_ptr<Processor> p) const
 {
-	if (p == _amp || p == _meter || p == _main_outs || p == _delayline || p == _trim || p == _polarity || (_summing && p == _summing) || (_volume && p == _volume) || (_triggerbox && p == _triggerbox) || (_surround_return && p == _surround_return) || (_surround_send && p == _surround_send)) {
+	if (p == _amp || p == _meter || p == _main_outs || p == _delayline || p == _trim || p == _polarity || (_summing_bus && p == _summing_bus) || (_summing_channel && p == _summing_channel) || (_volume && p == _volume) || (_triggerbox && p == _triggerbox) || (_surround_return && p == _surround_return) || (_surround_send && p == _surround_send)) {
 		return true;
 	}
 	return false;
@@ -3607,8 +3618,11 @@ Route::set_processor_state (const XMLNode& node, int version)
 		if (_delayline) {
 			must_configure |= find (_processors.begin(), _processors.end(), _delayline) == _processors.end ();
 		}
-		if (_summing) {
-			must_configure |= find (_processors.begin(), _processors.end(), _summing) == _processors.end ();
+		if (_summing_bus) {
+			must_configure |= find (_processors.begin(), _processors.end(), _summing_bus) == _processors.end ();
+		}
+		if (_summing_channel) {
+			must_configure |= find (_processors.begin(), _processors.end(), _summing_channel) == _processors.end ();
 		}
 		if (_intreturn) {
 			must_configure |= find (_processors.begin(), _processors.end(), _intreturn) == _processors.end ();
@@ -5759,6 +5773,15 @@ Route::setup_invisible_processors ()
 	}
 
 
+	/* SUMMING CHANNEL STAGE, after all pre-fader processors, before the fader.
+	 * (added before the pre-fader meter, so that the meter shows its output)
+	 */
+
+	if (_summing_channel) {
+		assert (!_summing_channel->display_to_user ());
+		new_processors.insert (amp, _summing_channel);
+	}
+
 	/* Pre-fader METER */
 
 	if (_meter && _meter_point == MeterPreFader) {
@@ -5854,13 +5877,13 @@ Route::setup_invisible_processors ()
 		trim = new_processors.begin();
 	}
 
-	/* SUMMING (busses), operates on the summed input before trim.
+	/* SUMMING BUS STAGE (busses), operates on the summed input before trim.
 	 * The internal return (aux sends) is added in front of it below.
 	 */
 
-	if (_summing) {
-		assert (!_summing->display_to_user ());
-		new_processors.push_front (_summing);
+	if (_summing_bus) {
+		assert (!_summing_bus->display_to_user ());
+		new_processors.push_front (_summing_bus);
 	}
 
 #ifdef HAVE_BEATBOX

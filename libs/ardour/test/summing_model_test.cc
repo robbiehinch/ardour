@@ -120,3 +120,102 @@ SummingModelTest::oddChannelTest ()
 	/* fewer channels than configured is allowed */
 	m->run (bufs, 1, n);
 }
+
+void
+SummingModelTest::rolesTest ()
+{
+	std::vector<std::string> ch = SummingModel::available_models (SummingChannel);
+	std::vector<std::string> bus = SummingModel::available_models (SummingBus);
+
+	/* the analog model applies to both stages */
+	CPPUNIT_ASSERT (std::find (ch.begin (), ch.end (), "Analog Console") != ch.end ());
+	CPPUNIT_ASSERT (std::find (bus.begin (), bus.end (), "Analog Console") != bus.end ());
+
+	/* Airwindows encode goes on channels, decode on busses */
+	CPPUNIT_ASSERT (std::find (ch.begin (), ch.end (), "Airwindows Console6 Channel") != ch.end ());
+	CPPUNIT_ASSERT (std::find (ch.begin (), ch.end (), "Airwindows Console6 Buss") == ch.end ());
+	CPPUNIT_ASSERT (std::find (bus.begin (), bus.end (), "Airwindows Console6 Buss") != bus.end ());
+	CPPUNIT_ASSERT (std::find (bus.begin (), bus.end (), "Airwindows Console6 Channel") == bus.end ());
+
+	CPPUNIT_ASSERT (!SummingModel::register_model ("No Role", [] () -> SummingModel* { return new NullSumming; }, 0));
+}
+
+/** Channel encode followed by Buss decode, for a single source */
+static float
+airwindows_round_trip_error (std::string const& variant, float amplitude, pframes_t& n_out)
+{
+	std::unique_ptr<SummingModel> ch (SummingModel::create ("Airwindows " + variant + " Channel"));
+	std::unique_ptr<SummingModel> bus (SummingModel::create ("Airwindows " + variant + " Buss"));
+	CPPUNIT_ASSERT (ch && bus);
+
+	const pframes_t n = rate / 10;
+	std::vector<float> l (n), in (n);
+	for (pframes_t i = 0; i < n; ++i) {
+		in[i] = l[i] = amplitude * sinf (2.f * M_PI * 100.f * i / rate);
+	}
+	float* bufs[1] = { &l[0] };
+	ch->configure (1, rate);
+	bus->configure (1, rate);
+	ch->run (bufs, 1, n);
+	bus->run (bufs, 1, n);
+
+	float err = 0;
+	for (pframes_t i = n / 2; i < n; ++i) {
+		CPPUNIT_ASSERT (std::isfinite (l[i]));
+		err = std::max (err, fabsf (l[i] - in[i]));
+	}
+	n_out = n;
+	return err / amplitude;
+}
+
+void
+SummingModelTest::airwindowsRoundTripTest ()
+{
+	/* decode is the exact inverse of encode for the stateless variants */
+	pframes_t n;
+	CPPUNIT_ASSERT (airwindows_round_trip_error ("PurestConsole", .5f, n) < 1e-5f);
+	CPPUNIT_ASSERT (airwindows_round_trip_error ("Console6", .5f, n) < 1e-5f);
+	/* Console7 adds 20kHz filters, its curves are not exact inverses */
+	CPPUNIT_ASSERT (airwindows_round_trip_error ("Console7", .1f, n) < .05f);
+}
+
+/** max deviation of Console6 encode -> sum -> decode from a plain sum of two sines */
+static float
+console6_sum_deviation (float amplitude)
+{
+	std::unique_ptr<SummingModel> ch (SummingModel::create ("Airwindows Console6 Channel"));
+	std::unique_ptr<SummingModel> bus (SummingModel::create ("Airwindows Console6 Buss"));
+	ch->configure (2, rate);
+	bus->configure (1, rate);
+
+	const pframes_t n = 1024;
+	std::vector<float> a (n), b (n), sum (n), plain (n);
+	for (pframes_t i = 0; i < n; ++i) {
+		a[i] = amplitude * sinf (2.f * M_PI * 100.f * i / rate);
+		b[i] = amplitude * sinf (2.f * M_PI * 150.f * i / rate);
+		plain[i] = a[i] + b[i];
+	}
+	float* chn[2] = { &a[0], &b[0] };
+	ch->run (chn, 2, n);
+	for (pframes_t i = 0; i < n; ++i) {
+		sum[i] = a[i] + b[i];
+	}
+	float* bus_buf[1] = { &sum[0] };
+	bus->run (bus_buf, 1, n);
+
+	float diff = 0;
+	for (pframes_t i = 0; i < n; ++i) {
+		CPPUNIT_ASSERT (std::isfinite (sum[i]));
+		diff = std::max (diff, fabsf (sum[i] - plain[i]));
+	}
+	return diff / (2.f * amplitude);
+}
+
+void
+SummingModelTest::airwindowsSummingTest ()
+{
+	/* summing via encode/decode is nearly linear at low levels, and adds
+	 * density (the console character) at higher levels */
+	CPPUNIT_ASSERT (console6_sum_deviation (.001f) < .002f);
+	CPPUNIT_ASSERT (console6_sum_deviation (.25f) > .05f);
+}

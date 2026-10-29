@@ -275,6 +275,10 @@ Delivery::configure_io (ChanCount in, ChanCount out)
 		return false;
 	}
 
+	if (_post_pan && !_post_pan->configure_io (out, out)) {
+		return false;
+	}
+
 	reset_panner ();
 
 	if (_amp) {
@@ -282,6 +286,22 @@ Delivery::configure_io (ChanCount in, ChanCount out)
 	}
 
 	return true;
+}
+
+void
+Delivery::set_post_pan_processor (std::shared_ptr<Processor> p)
+{
+	assert (!p || _role == Main);
+	_post_pan = p;
+	if (_post_pan && _configured) {
+		_post_pan->configure_io (_configured_output, _configured_output);
+	}
+}
+
+samplecnt_t
+Delivery::signal_latency () const
+{
+	return _post_pan ? _post_pan->signal_latency () : 0;
 }
 
 void
@@ -452,6 +472,10 @@ Delivery::run (BufferSet& bufs, samplepos_t start_sample, samplepos_t end_sample
 				_output->copy_to_outputs (bufs, *t, nframes, 0);
 			}
 		}
+	}
+
+	if (_post_pan) {
+		_post_pan->run (output_buffers (), start_sample, end_sample, speed, nframes, true);
 	}
 
 	if (result_required) {

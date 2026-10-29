@@ -3621,7 +3621,7 @@ Route::set_processor_state (const XMLNode& node, int version)
 		if (_summing_bus) {
 			must_configure |= find (_processors.begin(), _processors.end(), _summing_bus) == _processors.end ();
 		}
-		if (_summing_channel) {
+		if (_summing_channel && !_session.config.get_summing_channel_post_pan ()) {
 			must_configure |= find (_processors.begin(), _processors.end(), _summing_channel) == _processors.end ();
 		}
 		if (_intreturn) {
@@ -4770,6 +4770,23 @@ Route::listen_position_changed ()
 	_session.set_dirty ();
 }
 
+void
+Route::summing_channel_position_changed ()
+{
+	if (!_summing_channel) {
+		return;
+	}
+
+	{
+		PBD::Mutex::Lock lx (AudioEngine::instance()->process_lock ());
+		PBD::RWLock::WriterLock lm (_processor_lock);
+		configure_processors_unlocked (0, &lm);
+	}
+
+	processors_changed (RouteProcessorChange ()); /* EMIT SIGNAL */
+	processor_latency_changed (); /* EMIT SIGNAL */
+}
+
 std::shared_ptr<CapturingProcessor>
 Route::add_export_point()
 {
@@ -5773,13 +5790,19 @@ Route::setup_invisible_processors ()
 	}
 
 
-	/* SUMMING CHANNEL STAGE, after all pre-fader processors, before the fader.
-	 * (added before the pre-fader meter, so that the meter shows its output)
+	/* SUMMING CHANNEL STAGE, either after all pre-fader processors, before
+	 * the fader (added before the pre-fader meter, so that the meter shows
+	 * its output), or after the fader and panner, run by the main outs.
 	 */
 
 	if (_summing_channel) {
 		assert (!_summing_channel->display_to_user ());
-		new_processors.insert (amp, _summing_channel);
+		if (_session.config.get_summing_channel_post_pan ()) {
+			_main_outs->set_post_pan_processor (_summing_channel);
+		} else {
+			_main_outs->set_post_pan_processor (std::shared_ptr<Processor> ());
+			new_processors.insert (amp, _summing_channel);
+		}
 	}
 
 	/* Pre-fader METER */

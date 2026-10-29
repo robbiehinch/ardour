@@ -5274,6 +5274,11 @@ Session::config_changed (std::string p, bool ours)
 				r->summing_bus_stage ()->apply_session_config ();
 			}
 		}
+	} else if (p == "summing-channel-post-pan") {
+		std::shared_ptr<RouteList const> rl = routes.reader ();
+		for (auto const& r : *rl) {
+			r->summing_channel_position_changed ();
+		}
 	} else if (p.compare (0, 16, "summing-channel-") == 0) {
 		std::shared_ptr<RouteList const> rl = routes.reader ();
 		for (auto const& r : *rl) {

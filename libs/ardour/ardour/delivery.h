@@ -160,6 +160,15 @@ public:
 		return _amp;
 	}
 
+	/** Processing applied to the panned output, after the fader and panner,
+	 * just before the signal leaves the route (Main role only).
+	 * Must be called with the process lock held.
+	 */
+	void set_post_pan_processor (std::shared_ptr<Processor>);
+	std::shared_ptr<Processor> post_pan_processor () const { return _post_pan; }
+
+	samplecnt_t signal_latency () const;
+
 protected:
 	XMLNode& state () const;
 
@@ -168,6 +177,7 @@ protected:
 	gain_t      _current_gain;
 	std::shared_ptr<PannerShell> _panshell;
 	std::shared_ptr<Amp>         _amp;
+	std::shared_ptr<Processor>   _post_pan;
 
 	gain_t target_gain ();
 	void maybe_merge_midi_mute (BufferSet&, bool always);

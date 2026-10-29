@@ -235,6 +235,8 @@ public:
 	std::shared_ptr<SummingProcessor> summing_bus_stage() const { return _summing_bus; }
 	/** analog channel emulation before the fader, tracks and sub-busses only (may be null) */
 	std::shared_ptr<SummingProcessor> summing_channel_stage() const { return _summing_channel; }
+	/** move the channel stage between pre-fader and post-pan (session config) */
+	void summing_channel_position_changed ();
 	std::shared_ptr<PeakMeter>       peak_meter()       { return _meter; }
 	std::shared_ptr<const PeakMeter> peak_meter() const { return _meter; }
 	std::shared_ptr<PeakMeter> shared_peak_meter() const { return _meter; }

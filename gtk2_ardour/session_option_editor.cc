@@ -689,6 +689,17 @@ SessionOptionEditor::add_summing_options (SummingRole role)
 	}
 	add_option (page, mo);
 
+	if (ch) {
+		BoolOption* pp = new BoolOption (
+				"summing-channel-post-pan",
+				_("Process after the fader and panner"),
+				sigc::mem_fun (*_session_config, &SC::get_summing_channel_post_pan),
+				sigc::mem_fun (*_session_config, &SC::set_summing_channel_post_pan)
+				);
+		Gtkmm2ext::UI::instance()->set_tip (pp->tip_widget(), _("Run the channel stage on the track's output, after the fader and panner, so that there is unity gain between it and the bus stage. Encode/decode pairs such as Airwindows Console require this; the fader then sets how hard the channel stage is driven. Aux sends are not processed."));
+		add_option (page, pp);
+	}
+
 	EntryOption* po = new EntryOption (
 			pfx + "preset",
 			_("Plugin preset"),

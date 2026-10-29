@@ -43,6 +43,7 @@ CONFIG_VARIABLE (float, summing_channel_drive, "summing-channel-drive", 0.0f) /*
 CONFIG_VARIABLE (bool, summing_channel_auto_trim, "summing-channel-auto-trim", false)
 CONFIG_VARIABLE (float, summing_channel_trim_target, "summing-channel-trim-target", -6.0f) /* dBFS peak */
 CONFIG_VARIABLE (uint32_t, summing_channel_oversampling, "summing-channel-oversampling", 1)
+CONFIG_VARIABLE (bool, summing_channel_post_pan, "summing-channel-post-pan", false) /* after fader and panner */
 CONFIG_VARIABLE (SampleFormat, native_file_data_format,  "native-file-data-format", ARDOUR::FormatFloat)
 CONFIG_VARIABLE (HeaderFormat, native_file_header_format,  "native-file-header-format", ARDOUR::RF64_WAV)
 CONFIG_VARIABLE (bool, auto_play, "auto-play", false)
